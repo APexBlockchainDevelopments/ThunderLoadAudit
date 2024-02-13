@@ -140,11 +140,14 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
     function initialize(address tswapAddress) external initializer {
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
-        __Oracle_init(tswapAddress);
+        //follow up oracle manipulation?
+        __Oracle_init(tswapAddress); 
+        //@audit magic numbers
         s_feePrecision = 1e18;
         s_flashLoanFee = 3e15; // 0.3% ETH fee
     }
 
+    //e this is for lp to get lp tokens in exchange for providing tokens
     function deposit(IERC20 token, uint256 amount) external revertIfZero(amount) revertIfNotAllowedToken(token) {
         AssetToken assetToken = s_tokenToAssetToken[token];
         uint256 exchangeRate = assetToken.getExchangeRate();
@@ -153,20 +156,14 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         assetToken.mint(msg.sender, mintAmount);
         uint256 calculatedFee = getCalculatedFee(token, amount);
         assetToken.updateExchangeRate(calculatedFee);
+        //follow up, will this work without an approve?
         token.safeTransferFrom(msg.sender, address(assetToken), amount);
     }
 
     /// @notice Withdraws the underlying token from the asset token
     /// @param token The token they want to withdraw from
     /// @param amountOfAssetToken The amount of the underlying they want to withdraw
-    function redeem(
-        IERC20 token,
-        uint256 amountOfAssetToken
-    )
-        external
-        revertIfZero(amountOfAssetToken)
-        revertIfNotAllowedToken(token)
-    {
+    function redeem(IERC20 token,uint256 amountOfAssetToken) external revertIfZero(amountOfAssetToken) revertIfNotAllowedToken(token) {
         AssetToken assetToken = s_tokenToAssetToken[token];
         uint256 exchangeRate = assetToken.getExchangeRate();
         if (amountOfAssetToken == type(uint256).max) {
@@ -178,16 +175,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         assetToken.transferUnderlyingTo(msg.sender, amountUnderlying);
     }
 
-    function flashloan(
-        address receiverAddress,
-        IERC20 token,
-        uint256 amount,
-        bytes calldata params
-    )
-        external
-        revertIfZero(amount)
-        revertIfNotAllowedToken(token)
-    {
+    function flashloan(address receiverAddress, IERC20 token, uint256 amount, bytes calldata params) external revertIfZero(amount) revertIfNotAllowedToken(token) {
         AssetToken assetToken = s_tokenToAssetToken[token];
         uint256 startingBalance = IERC20(token).balanceOf(address(assetToken));
 

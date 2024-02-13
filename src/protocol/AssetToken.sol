@@ -78,6 +78,7 @@ contract AssetToken is ERC20 {
     }
 
     function updateExchangeRate(uint256 fee) external onlyThunderLoan {
+        // q is this math correct? follow up on this funciton too
         // 1. Get the current exchange rate
         // 2. How big the fee is should be divided by the total supply
         // 3. So if the fee is 1e18, and the total supply is 2e18, the exchange rate be multiplied by 1.5
