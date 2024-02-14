@@ -73,6 +73,8 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 import { OracleUpgradeable } from "./OracleUpgradeable.sol";
 import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import { IFlashLoanReceiver } from "../interfaces/IFlashLoanReceiver.sol";
+//@audit shoudl implement this interface
+//import {IThunderLoan} from "../interfaces/IThunderLoan.sol";
 
 contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, OracleUpgradeable {
     error ThunderLoan__NotAllowedToken(IERC20 token);
@@ -91,22 +93,20 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
-    mapping(IERC20 => AssetToken) public s_tokenToAssetToken;
+    mapping(IERC20 => AssetToken) public s_tokenToAssetToken;  // e I think this maps the undlying token to teh asset token
 
     // The fee in WEI, it should have 18 decimals. Each flash loan takes a flat fee of the token price.
     uint256 private s_feePrecision;
     uint256 private s_flashLoanFee; // 0.3% ETH fee
 
-    mapping(IERC20 token => bool currentlyFlashLoaning) private s_currentlyFlashLoaning;
+    mapping(IERC20 token => bool currentlyFlashLoaning) private s_currentlyFlashLoaning; //e mapping that tells us if a token is in teh middle of a flash loan
 
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
     event Deposit(address indexed account, IERC20 indexed token, uint256 amount);
     event AllowedTokenSet(IERC20 indexed token, AssetToken indexed asset, bool allowed);
-    event Redeemed(
-        address indexed account, IERC20 indexed token, uint256 amountOfAssetToken, uint256 amountOfUnderlying
-    );
+    event Redeemed(address indexed account, IERC20 indexed token, uint256 amountOfAssetToken, uint256 amountOfUnderlying);
     event FlashLoan(address indexed receiverAddress, IERC20 indexed token, uint256 amount, uint256 fee, bytes params);
 
     /*//////////////////////////////////////////////////////////////
@@ -137,24 +137,34 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
     /*//////////////////////////////////////////////////////////////
                            EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+    //@audit why not only owner???
+    //@audit info change name to poolFactoryAddress
+    //@audit low -initializer can be front run
     function initialize(address tswapAddress) external initializer {
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
         //follow up oracle manipulation?
         __Oracle_init(tswapAddress); 
-        //@audit magic numbers
+        //written in aderyn
         s_feePrecision = 1e18;
+        //written in aderyn
         s_flashLoanFee = 3e15; // 0.3% ETH fee
     }
 
     //e this is for lp to get lp tokens in exchange for providing tokens
+    //@audit info where's the natspec?
     function deposit(IERC20 token, uint256 amount) external revertIfZero(amount) revertIfNotAllowedToken(token) {
         AssetToken assetToken = s_tokenToAssetToken[token];
         uint256 exchangeRate = assetToken.getExchangeRate();
+        //e 100e18 USDC * 1e18 / 1e18 (2e18)
+        //e this should never be 0 because of teh asset token conditional
         uint256 mintAmount = (amount * assetToken.EXCHANGE_RATE_PRECISION()) / exchangeRate;
         emit Deposit(msg.sender, token, amount);
         assetToken.mint(msg.sender, mintAmount);
+
+        //q why are calculating the fees of flash loans in the deposit?
         uint256 calculatedFee = getCalculatedFee(token, amount);
+        //@audit this lihne seems to be wrong
         assetToken.updateExchangeRate(calculatedFee);
         //follow up, will this work without an approve?
         token.safeTransferFrom(msg.sender, address(assetToken), amount);
@@ -175,7 +185,14 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         assetToken.transferUnderlyingTo(msg.sender, amountUnderlying);
     }
 
-    function flashloan(address receiverAddress, IERC20 token, uint256 amount, bytes calldata params) external revertIfZero(amount) revertIfNotAllowedToken(token) {
+    function flashloan(
+        address receiverAddress, //e the addres to get the floash loaned tokens 
+        IERC20 token, //e the ERC20 to borrow
+        uint256 amount, //e the amount to borrow
+        bytes calldata params // the parameters to call the receiver Address with
+    ) 
+    external revertIfZero(amount) revertIfNotAllowedToken(token) {
+        
         AssetToken assetToken = s_tokenToAssetToken[token];
         uint256 startingBalance = IERC20(token).balanceOf(address(assetToken));
 
@@ -189,13 +206,18 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
 
         uint256 fee = getCalculatedFee(token, amount);
         // slither-disable-next-line reentrancy-vulnerabilities-2 reentrancy-vulnerabilities-3
+        //@audit info - messed up slither disables
+        //@follw up possible reentrancy
         assetToken.updateExchangeRate(fee);
 
         emit FlashLoan(receiverAddress, token, amount, fee, params);
 
+        //@follw up possible reentrancy
         s_currentlyFlashLoaning[token] = true;
         assetToken.transferUnderlyingTo(receiverAddress, amount);
         // slither-disable-next-line unused-return reentrancy-vulnerabilities-2
+        //@follow up possible reeentrancy
+        //@follow up do we need the return value of functionCall?
         receiverAddress.functionCall(
             abi.encodeCall(
                 IFlashLoanReceiver.executeOperation,
@@ -216,6 +238,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         s_currentlyFlashLoaning[token] = false;
     }
 
+    //@audit written in aderyn
     function repay(IERC20 token, uint256 amount) public {
         if (!s_currentlyFlashLoaning[token]) {
             revert ThunderLoan__NotCurrentlyFlashLoaning();
@@ -224,11 +247,14 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         token.safeTransferFrom(msg.sender, address(assetToken), amount);
     }
 
+    //okay @audit-info needs natspec
     function setAllowedToken(IERC20 token, bool allowed) external onlyOwner returns (AssetToken) {
+        //@audit centrilization risk for trusted owners
         if (allowed) {
             if (address(s_tokenToAssetToken[token]) != address(0)) {
-                revert ThunderLoan__AlreadyAllowed();
+                revert ThunderLoan__AlreadyAllowed(); //@audit infor revert with token?
             }
+            //What if they don't have a name?
             string memory name = string.concat("ThunderLoan ", IERC20Metadata(address(token)).name());
             string memory symbol = string.concat("tl", IERC20Metadata(address(token)).symbol());
             AssetToken assetToken = new AssetToken(address(this), token, name, symbol);
@@ -255,16 +281,21 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
             revert ThunderLoan__BadNewFee();
         }
         s_flashLoanFee = newFee;
+        //@audit should emit an event
     }
+
+    //q is it ever unsetpoorly?
 
     function isAllowedToken(IERC20 token) public view returns (bool) {
         return address(s_tokenToAssetToken[token]) != address(0);
     }
 
+    //@audit written in aderyn
     function getAssetFromToken(IERC20 token) public view returns (AssetToken) {
         return s_tokenToAssetToken[token];
     }
 
+    //@audit written in aderyn
     function isCurrentlyFlashLoaning(IERC20 token) public view returns (bool) {
         return s_currentlyFlashLoaning[token];
     }
@@ -277,5 +308,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         return s_feePrecision;
     }
 
+    //@audit centralization risk for trusted owners
+    //@audit no natspec for empty function?
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner { }
 }

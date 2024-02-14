@@ -95,6 +95,8 @@ contract ThunderLoanUpgraded is Initializable, OwnableUpgradeable, UUPSUpgradeab
 
     // The fee in WEI, it should have 18 decimals. Each flash loan takes a flat fee of the token price.
     uint256 private s_flashLoanFee; // 0.3% ETH fee
+    //@audit storage collision
+    //@audit why public? 
     uint256 public constant FEE_PRECISION = 1e18;
 
     mapping(IERC20 token => bool currentlyFlashLoaning) private s_currentlyFlashLoaning;
@@ -141,6 +143,7 @@ contract ThunderLoanUpgraded is Initializable, OwnableUpgradeable, UUPSUpgradeab
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
         __Oracle_init(tswapAddress);
+                //written in aderyn
         s_flashLoanFee = 3e15; // 0.3% ETH fee
     }
 
@@ -227,6 +230,7 @@ contract ThunderLoanUpgraded is Initializable, OwnableUpgradeable, UUPSUpgradeab
         s_currentlyFlashLoaning[token] = false;
     }
 
+    //@audit written in aderyn
     function repay(IERC20 token, uint256 amount) public {
         if (!s_currentlyFlashLoaning[token]) {
             revert ThunderLoan__NotCurrentlyFlashLoaning();
@@ -272,6 +276,7 @@ contract ThunderLoanUpgraded is Initializable, OwnableUpgradeable, UUPSUpgradeab
         return address(s_tokenToAssetToken[token]) != address(0);
     }
 
+    //@audit written in aderyn
     function getAssetFromToken(IERC20 token) public view returns (AssetToken) {
         return s_tokenToAssetToken[token];
     }

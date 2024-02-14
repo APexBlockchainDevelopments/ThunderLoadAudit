@@ -9,18 +9,26 @@ contract OracleUpgradeable is Initializable {
     address private s_poolFactory;
 
     function __Oracle_init(address poolFactoryAddress) internal onlyInitializing {
+        //@audit could be front run
         __Oracle_init_unchained(poolFactoryAddress);
     }
 
     function __Oracle_init_unchained(address poolFactoryAddress) internal onlyInitializing {
+        //@audit no zero address check
         s_poolFactory = poolFactoryAddress;
     }
 
+    //q what if price is manipulated?
+    // can I manipalte the rpice?
+    //reentrancy?
+    //check the tests? Fork tests or mocks?
+    //@audit info you should use forked tests for this!
     function getPriceInWeth(address token) public view returns (uint256) {
         address swapPoolOfToken = IPoolFactory(s_poolFactory).getPool(token);
         return ITSwapPool(swapPoolOfToken).getPriceOfOnePoolTokenInWeth();
     }
 
+    //@audit redunant?
     function getPrice(address token) external view returns (uint256) {
         return getPriceInWeth(token);
     }
