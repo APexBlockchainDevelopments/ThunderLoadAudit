@@ -26,7 +26,7 @@ contract AssetToken is ERC20 {
     // instead of % shares,  you do exchange rate
     //compound 
     uint256 private s_exchangeRate;
-    //@audit why public?
+    //@audit why public? why not constant
     uint256 public constant EXCHANGE_RATE_PRECISION = 1e18;
     uint256 private constant STARTING_EXCHANGE_RATE = 1e18;
 
@@ -58,7 +58,8 @@ contract AssetToken is ERC20 {
     constructor(
         address thunderLoan,
         IERC20 underlying, //token being deposited
-        //q where a the tokens stored?
+        // qa where a the tokens stored?
+        // a they are stored inteh asset token contract
         string memory assetName,
         string memory assetSymbol
     )
@@ -81,9 +82,10 @@ contract AssetToken is ERC20 {
 
     function transferUnderlyingTo(address to, uint256 amount) external onlyThunderLoan {
         //weird erc20 tokens?
-        //q what happens if USDC blacklists the thunderload contract?
-        //q what happens if USDC blacklists the asset token contract?
+        //qa what happens if USDC denylisted the thunderload contract?
+        //qa what happens if USDC denylisted the asset token contract?
         //@follow up werid ERC20s with USDC
+        // @audit-medium the protocol would be frozen
         i_underlying.safeTransfer(to, amount);
     }
 
@@ -95,12 +97,10 @@ contract AssetToken is ERC20 {
         // 3. So if the fee is 1e18, and the total supply is 2e18, the exchange rate be multiplied by 1.5
         // if the fee is 0.5 ETH, and the total supply is 4, the exchange rate should be multiplied by 1.125
         // it should always go up, never down -> INVARIANT!
-        // q okay but why?
         // newExchangeRate = oldExchangeRate * (totalSupply + fee) / totalSupply
         // newExchangeRate = 1 (4 + 0.5) / 4
         // newExchangeRate = 1.125
 
-        //q what if totalsupply is 0?
         //this breaks! is that an issue?
         uint256 newExchangeRate = s_exchangeRate * (totalSupply() + fee) / totalSupply();
 

@@ -157,14 +157,15 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         AssetToken assetToken = s_tokenToAssetToken[token];
         uint256 exchangeRate = assetToken.getExchangeRate();
         //e 100e18 USDC * 1e18 / 1e18 (2e18)
-        //e this should never be 0 because of teh asset token conditional
+        //e this should never be 0 because of the asset token conditional
         uint256 mintAmount = (amount * assetToken.EXCHANGE_RATE_PRECISION()) / exchangeRate;
         emit Deposit(msg.sender, token, amount);
         assetToken.mint(msg.sender, mintAmount);
 
         //q why are calculating the fees of flash loans in the deposit?
         uint256 calculatedFee = getCalculatedFee(token, amount);
-        //@audit this lihne seems to be wrong
+        //@audit HIGH this lihne seems to be wrong
+        // we shouldn't be updating exchange rate here
         assetToken.updateExchangeRate(calculatedFee);
         //follow up, will this work without an approve?
         token.safeTransferFrom(msg.sender, address(assetToken), amount);
@@ -192,7 +193,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         bytes calldata params // the parameters to call the receiver Address with
     ) 
     external revertIfZero(amount) revertIfNotAllowedToken(token) {
-        
+
         AssetToken assetToken = s_tokenToAssetToken[token];
         uint256 startingBalance = IERC20(token).balanceOf(address(assetToken));
 
@@ -204,6 +205,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
             revert ThunderLoan__CallerIsNotContract();
         }
 
+        //e this is probably the fee of the flash loan
         uint256 fee = getCalculatedFee(token, amount);
         // slither-disable-next-line reentrancy-vulnerabilities-2 reentrancy-vulnerabilities-3
         //@audit info - messed up slither disables
@@ -214,7 +216,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
 
         //@follw up possible reentrancy
         s_currentlyFlashLoaning[token] = true;
-        assetToken.transferUnderlyingTo(receiverAddress, amount);
+        assetToken.transferUnderlyingTo(receiverAddress, amount); //e this actually sends out the money
         // slither-disable-next-line unused-return reentrancy-vulnerabilities-2
         //@follow up possible reeentrancy
         //@follow up do we need the return value of functionCall?
@@ -273,6 +275,10 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         //slither-disable-next-line divide-before-multiply
         uint256 valueOfBorrowedToken = (amount * getPriceInWeth(address(token))) / s_feePrecision;
         //slither-disable-next-line divide-before-multiply
+        //q what if the token has 6 decimals?
+        //q is this correct?
+        // @audit IMPACT prices are wrong -> medium LIKELIHOOD -> high
+        // @audit-high if teh fee is going to be int he token, then teh value should reflect that
         fee = (valueOfBorrowedToken * s_flashLoanFee) / s_feePrecision;
     }
 
